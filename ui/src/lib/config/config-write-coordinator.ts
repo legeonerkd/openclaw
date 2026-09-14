@@ -298,6 +298,8 @@ export function createConfigWriteCoordinator({
   const drainPendingWrites = async (flushScheduledDraft = false): Promise<void> => {
     while (true) {
       if (flushScheduledDraft) {
+        // A debounce timer is pending persisted intent. Flush it into a tracked
+        // flight before draining so external writers cannot race the draft.
         flushScheduledAutoSave();
       }
       const flight = inFlight;
@@ -592,13 +594,7 @@ export function createConfigWriteCoordinator({
         scheduleAutoSave();
       }
     },
-    waitForPendingWrites: () => {
-      // A debounce timer represents pending persisted intent too. Convert it
-      // into a tracked flight before draining so external writers cannot race
-      // the draft simply because the user clicked again within 800 ms.
-      flushScheduledAutoSave();
-      return drainPendingWrites(true);
-    },
+    waitForPendingWrites: () => drainPendingWrites(true),
     save: (options = {}) => {
       const canDispatch = () =>
         canDispatchConfigMutation("config.set") && (options.canDispatch?.() ?? true);
