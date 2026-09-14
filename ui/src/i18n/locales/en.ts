@@ -6,6 +6,7 @@ import * as agentEn from "./en-agents.ts";
 export const en: TranslationMap & {
   board: TranslationMap & { widget: TranslationMap };
   browser: TranslationMap & { errors: TranslationMap };
+  chat: TranslationMap & { messages: TranslationMap };
   configPage: TranslationMap;
   connection: TranslationMap;
   configView: TranslationMap;
@@ -3236,7 +3237,6 @@ export const en: TranslationMap & {
       cli: "Command line",
       terminal: "Terminal",
       app: "App",
-      rpc: "RPC",
     },
   },
   activityFeed: {
@@ -5042,8 +5042,6 @@ export const en: TranslationMap & {
     },
     messages: {
       copySelection: "Copy",
-      viaSource: "via {source}",
-      sourceKinds: { web: "Web", cli: "CLI", terminal: "TUI", app: "App", rpc: "RPC" },
       copyLink: "Copy link",
       copyFileName: "Copy file name",
       forkFromHere: "Fork from here",
@@ -5069,13 +5067,7 @@ export const en: TranslationMap & {
       unknownDate: "Unknown date",
       toolSender: "Tool",
       errorSender: "Error",
-      forwardedFrom: "From",
-      forwardedFromAgent: "Forwarded from {agentId}",
-      forwardedMessage: "Forwarded message",
-      fullContentLoadExhausted: "Could not load the full message.",
       voiceNote: "Voice note",
-      duplicatesCollapsed: "{count} consecutive identical messages collapsed",
-      contextFor: "Message context for {timestamp}",
     },
     mediaPlayer: {
       play: "Play",

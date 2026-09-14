@@ -27,8 +27,5 @@ export function gatewayClientKind(client: { id?: string | null; mode?: string | 
   ) {
     return "app";
   }
-  return client.id === GATEWAY_CLIENT_IDS.GATEWAY_CLIENT ||
-    (client.mode && ["backend", "node", "worker", "probe", "test"].includes(client.mode))
-    ? "rpc"
-    : undefined;
+  return undefined;
 }
