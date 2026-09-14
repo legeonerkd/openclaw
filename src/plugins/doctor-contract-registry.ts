@@ -191,7 +191,7 @@ function loadPluginDoctorContractEntry(
     return null;
   }
   const { summary, ...contract } = coercePluginDoctorContractModule(mod);
-  if (!Object.values(summary).some(Boolean)) {
+  if (!Object.values(summary).some(Boolean) && surface !== "stateMigrations") {
     return null;
   }
   return {
@@ -370,6 +370,7 @@ export function listPluginDoctorSessionStoreAgentIds(params?: {
 
 function loadLegacyChannelStateMigrationDetector(
   record: PluginManifestRegistryRecord,
+  onInspectedStatelessPlugin?: (pluginId: string) => void,
 ): BundledChannelLegacyStateMigrationDetector | null {
   const source = record.setupSource;
   if (!source) {
@@ -387,14 +388,15 @@ function loadLegacyChannelStateMigrationDetector(
       ) {
         return null;
       }
-      const directDetector =
-        typeof entry.loadLegacyStateMigrationDetector === "function"
-          ? entry.loadLegacyStateMigrationDetector()
-          : undefined;
-      if (typeof directDetector === "function") {
+      if (typeof entry.loadLegacyStateMigrationDetector === "function") {
+        const directDetector = entry.loadLegacyStateMigrationDetector();
+        if (typeof directDetector !== "function") {
+          throw new Error(`Plugin ${record.id} legacy migration loader did not return a detector.`);
+        }
         return directDetector;
       }
       if (entry.features?.legacyStateMigrations !== true) {
+        onInspectedStatelessPlugin?.(record.id);
         return null;
       }
       const lifecycleDetector = entry.loadSetupPlugin().lifecycle?.detectLegacyStateMigrations;
@@ -417,11 +419,13 @@ export function listPluginDoctorStateMigrationEntries(params?: {
   pluginIds?: readonly string[];
   validateDeclarations?: boolean;
   onInspectedPlugin?: (pluginId: string) => void;
+  onInspectedStatelessPlugin?: (pluginId: string) => void;
 }): PluginDoctorStateMigrationEntry[] {
   return loadPluginDoctorStateMigrationEntries(
     resolvePluginDoctorStateMigrationRecords(params ?? {}),
     params?.validateDeclarations,
     params?.onInspectedPlugin,
+    params?.onInspectedStatelessPlugin,
   );
 }
 
@@ -429,6 +433,7 @@ function loadPluginDoctorStateMigrationEntries(
   records: readonly PluginManifestRegistryRecord[],
   validateDeclarations = true,
   onInspectedPlugin?: (pluginId: string) => void,
+  onInspectedStatelessPlugin?: (pluginId: string) => void,
 ): PluginDoctorStateMigrationEntry[] {
   const entries: PluginDoctorStateMigrationEntry[] = [];
   for (const record of records) {
@@ -467,16 +472,25 @@ function loadPluginDoctorStateMigrationEntries(
       continue;
     }
     if (declaresPluginDoctorContractSurface(record.doctorContract, "stateMigrations")) {
+      if (modern && Array.isArray(declaration) && declaration.length === 0) {
+        onInspectedStatelessPlugin?.(record.id);
+      }
       continue;
     }
     if (record.channels.length === 0 || record.origin === "bundled") {
+      if (modern) {
+        onInspectedStatelessPlugin?.(record.id);
+      }
       continue;
     }
 
     // Released external plugins retain their own setup-entry detector through 2027.1; resolving
     // the winning manifest's validated setupSource avoids loading a shadowed bundled plugin.
-    const detector = loadLegacyChannelStateMigrationDetector(record);
+    const detector = loadLegacyChannelStateMigrationDetector(record, onInspectedStatelessPlugin);
     if (!detector) {
+      if (modern && !record.setupSource) {
+        onInspectedStatelessPlugin?.(record.id);
+      }
       continue;
     }
     onInspectedPlugin?.(record.id);

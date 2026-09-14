@@ -137,6 +137,7 @@ export async function writeConfigFileFromContext(
     sourceConfig: snapshot.sourceConfig,
     nextConfig: cfg,
     pending: deferredPluginMigrations,
+    writeOptions: options,
   });
   if (doctorAuthority) {
     sourceGuard?.();

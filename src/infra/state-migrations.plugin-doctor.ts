@@ -37,7 +37,22 @@ type PluginDoctorPlanCollection = {
   plans: DetectedPluginDoctorStateMigrationPlan[];
   inspectedPluginIds: Set<string>;
   otherPhasePluginIds: Set<string>;
+  requiredPluginIds: Set<string>;
+  statelessPluginIds: Set<string>;
 };
+
+function pluginInspectionFacts(
+  collection: PluginDoctorPlanCollection,
+): Pick<MigrationMessages, "requiredPluginIds" | "statelessPluginIds"> {
+  return {
+    ...(collection.requiredPluginIds.size > 0
+      ? { requiredPluginIds: [...collection.requiredPluginIds] }
+      : {}),
+    ...(collection.statelessPluginIds.size > 0
+      ? { statelessPluginIds: [...collection.statelessPluginIds] }
+      : {}),
+  };
+}
 
 function completedPluginInspection(
   collection: PluginDoctorPlanCollection,
@@ -89,7 +104,15 @@ export async function collectPluginDoctorStateMigrationPlans(
   const plans: DetectedPluginDoctorStateMigrationPlan[] = [];
   const inspectedPluginIds = new Set<string>();
   const otherPhasePluginIds = new Set<string>();
-  const collected = { plans, inspectedPluginIds, otherPhasePluginIds };
+  const requiredPluginIds = new Set<string>();
+  const statelessPluginIds = new Set<string>();
+  const collected = {
+    plans,
+    inspectedPluginIds,
+    otherPhasePluginIds,
+    requiredPluginIds,
+    statelessPluginIds,
+  };
   const { config, env } = input;
   let entries: ReturnType<typeof listPluginDoctorStateMigrationEntries>;
   try {
@@ -98,6 +121,7 @@ export async function collectPluginDoctorStateMigrationPlans(
       env,
       validateDeclarations: params.validateDeclarations,
       onInspectedPlugin: (pluginId) => inspectedPluginIds.add(pluginId),
+      onInspectedStatelessPlugin: (pluginId) => statelessPluginIds.add(pluginId),
     });
   } catch (error) {
     if (!(error instanceof PluginDoctorStateMigrationDeclarationError)) {
@@ -108,6 +132,7 @@ export async function collectPluginDoctorStateMigrationPlans(
     return collected;
   }
   for (const entry of entries) {
+    requiredPluginIds.add(entry.pluginId);
     inspectedPluginIds.add(entry.pluginId);
     if (entry.migration.phase !== params.phase) {
       otherPhasePluginIds.add(entry.pluginId);
@@ -207,6 +232,7 @@ export async function runPluginDoctorStateMigrationPlans(params: {
     ...migrated,
     completedPluginIds: undefined,
     ...completedPluginInspection(collected, migrated),
+    ...pluginInspectionFacts(collected),
     warnings: [...warnings, ...migrated.warnings],
     ...(hasDetectorFailure ? { warningDisposition: undefined } : {}),
   };
@@ -388,6 +414,7 @@ export async function runPostSessionPluginDoctorStateRepairs(params: {
       ...result,
       completedPluginIds: undefined,
       ...completedPluginInspection(collected, result, unfinishedEarlierIds),
+      ...pluginInspectionFacts(collected),
       warnings: [...warnings, ...result.warnings],
       ...(warnings.length > 0 ? { warningDisposition: undefined } : {}),
     };
@@ -466,6 +493,8 @@ export async function autoMigrateLegacyPluginDoctorState(params: {
   warnings: string[];
   notices?: string[];
   completedPluginIds?: readonly string[];
+  requiredPluginIds?: readonly string[];
+  statelessPluginIds?: readonly string[];
 }> {
   const env = params.env ?? process.env;
   const stateDirResult = await autoMigrateLegacyStateDir({
@@ -487,7 +516,13 @@ export async function autoMigrateLegacyPluginDoctorState(params: {
   const input: PluginDoctorInput = { config: params.config, env, stateDir, oauthDir };
   const collected =
     stateSchema.warnings.length > 0
-      ? { plans: [], inspectedPluginIds: new Set<string>(), otherPhasePluginIds: new Set<string>() }
+      ? {
+          plans: [],
+          inspectedPluginIds: new Set<string>(),
+          otherPhasePluginIds: new Set<string>(),
+          requiredPluginIds: new Set<string>(),
+          statelessPluginIds: new Set<string>(),
+        }
       : await collectPluginDoctorStateMigrationPlans(input, {
           includeDoctorOnly: params.doctorOnlyStateMigrations === true,
           warnings,
@@ -503,6 +538,7 @@ export async function autoMigrateLegacyPluginDoctorState(params: {
     changes,
     warnings,
     ...completedPluginInspection(collected, migrated),
+    ...pluginInspectionFacts(collected),
     ...(notices.length > 0 ? { notices } : {}),
   };
 }

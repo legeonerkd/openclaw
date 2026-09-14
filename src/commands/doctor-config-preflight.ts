@@ -224,6 +224,20 @@ export async function runDoctorConfigPreflight(
       planAutomaticConfigRepair(snapshot, { installRecords }),
     );
   };
+  const planAdmittedConfigRepair = (
+    snapshot: ConfigFileSnapshot,
+    prepared: ReturnType<typeof planAutomaticConfigRepair> = null,
+  ) =>
+    (gatewayStartupCheckpointRequired ||
+      options.repairPrefixedConfig === true ||
+      (stateMigrationsRequested && options.migrateLegacyConfig !== false)) &&
+    !snapshot.valid &&
+    !skipLegacyParentConfigWrite &&
+    !shouldSkipPluginValidationForDoctorConfigPreflight() &&
+    !resolveIsConfigReadOnly(process.env) &&
+    !resolveFutureConfigActionBlock({ action: "normalize legacy config", snapshot })
+      ? (prepared ?? planScopedConfigRepair(snapshot))
+      : null;
   const migrateLegacyConfigIfNeeded = createDoctorLegacyConfigMigration({
     enabled: options.migrateLegacyConfig !== false,
     measure: measurePreflightStep,
@@ -255,6 +269,7 @@ export async function runDoctorConfigPreflight(
       validateConfig: options.validateStartupConfig,
       beforeStateMigrations: options.beforeStateMigrations,
       preparePluginMigrations: pluginMigrations.prepare,
+      deferredPluginMigrations: pluginMigrations.snapshotOptions().deferredPluginMigrations,
     });
   try {
     if (migrationCheckpoint && !skipPristineStartupStateMigrations) {
@@ -340,17 +355,7 @@ export async function runDoctorConfigPreflight(
     });
 
     let baseConfig = snapshot.sourceConfig ?? snapshot.config ?? {};
-    let automaticConfigRepair =
-      activeConfigRepair ??
-      ((gatewayStartupCheckpointRequired ||
-        (stateMigrationsRequested && options.migrateLegacyConfig !== false)) &&
-      !snapshot.valid &&
-      !skipLegacyParentConfigWrite &&
-      !shouldSkipPluginValidationForDoctorConfigPreflight() &&
-      !resolveIsConfigReadOnly(process.env) &&
-      !resolveFutureConfigActionBlock({ action: "normalize legacy config", snapshot })
-        ? planScopedConfigRepair(snapshot)
-        : null);
+    let automaticConfigRepair = planAdmittedConfigRepair(snapshot, activeConfigRepair);
     shouldPersistRefreshedPluginIndex =
       migrationCheckpoint !== undefined && needsRefreshedPluginIndexPersistence(configSnapshotRead);
     if (shouldPersistRefreshedPluginIndex) {
@@ -385,7 +390,7 @@ export async function runDoctorConfigPreflight(
       snapshot = configSnapshotRead.snapshot;
       assertShippedPluginInstallConfigImportCurrent(snapshot, pluginInstallConfigImport);
       baseConfig = snapshot.sourceConfig ?? snapshot.config ?? {};
-      automaticConfigRepair = planScopedConfigRepair(snapshot);
+      automaticConfigRepair = planAdmittedConfigRepair(snapshot);
       if (!automaticConfigRepair) {
         throw new Error("Config changed after plugin install migration; retry startup.");
       }
@@ -414,8 +419,13 @@ export async function runDoctorConfigPreflight(
         snapshotRead: { ...configSnapshotRead, snapshot },
         readRefreshedSnapshot: () => readConfigSnapshotForPreflight(false),
         beforeStateMigrations: options.beforeStateMigrations,
-        onDeferredPlugins: (pending) =>
-          pluginMigrations.converged(pending, snapshot, configSnapshotRead?.pluginMetadataSnapshot),
+        onDeferredPlugins: (pending, inspection) =>
+          pluginMigrations.converged(
+            pending,
+            snapshot,
+            configSnapshotRead?.pluginMetadataSnapshot,
+            inspection,
+          ),
       });
       if (!gatewayStartupCheckpointRequired || shouldRecordStartupCheckpoint) {
         if (
@@ -435,7 +445,7 @@ export async function runDoctorConfigPreflight(
           migrationCheckpoint !== undefined && needsRefreshedPluginIndexPersistence(refreshed);
         snapshot = refreshed.snapshot;
         baseConfig = snapshot.sourceConfig ?? snapshot.config ?? {};
-        automaticConfigRepair = snapshot.valid ? null : planScopedConfigRepair(snapshot);
+        automaticConfigRepair = planAdmittedConfigRepair(snapshot);
       }
     }
     const stateMigrationInput = resolveStateMigrationConfigInput({ snapshot, baseConfig });
@@ -606,7 +616,7 @@ export async function runDoctorConfigPreflight(
       configSnapshotRead = await readConfigSnapshotForPreflight(false);
       snapshot = configSnapshotRead.snapshot;
       baseConfig = snapshot.sourceConfig ?? snapshot.config ?? {};
-      automaticConfigRepair = snapshot.valid ? null : planScopedConfigRepair(snapshot);
+      automaticConfigRepair = planAdmittedConfigRepair(snapshot);
     }
     if (
       automaticConfigRepair &&

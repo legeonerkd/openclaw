@@ -2,7 +2,10 @@ import { isRecord as isPlainRecord } from "@openclaw/normalization-core/record-c
 import { uniqueValues } from "@openclaw/normalization-core/string-normalization";
 import type { ConfigFileSnapshot } from "../config/config.js";
 import { readConfigFileSnapshotForWrite } from "../config/config.js";
-import { getDeferredPluginMigrationConfigFacts } from "../config/deferred-plugin-migration-config.js";
+import {
+  assertDeferredPluginMigrationConfigEditAllowed,
+  getDeferredPluginMigrationConfigFacts,
+} from "../config/deferred-plugin-migration-config.js";
 import { visitConfigValueTree } from "../config/io.read-helpers.js";
 import { formatConfigIssueLines, normalizeConfigIssues } from "../config/issue-format.js";
 import { renderConfigValidationIssueLines } from "../config/issue-location.js";
@@ -389,6 +392,12 @@ export async function validateConfigMutation(params: {
   deferredPluginMigrations?: readonly DeferredPluginMigration[];
 }): Promise<{ kind: "dry-run"; result: ConfigSetDryRunResult } | { kind: "unchanged" | "write" }> {
   const { config, operations, options, pluginMetadataSnapshot } = params;
+  assertDeferredPluginMigrationConfigEditAllowed({
+    sourceConfig: params.previousConfig,
+    nextConfig: config,
+    pending: params.deferredPluginMigrations ?? [],
+    editedPaths: operations.map((operation) => operation.setPath),
+  });
   const policyIssues = formatConfigIssueLines(collectUnsupportedSecretRefPolicyIssues(config), "", {
     normalizeRoot: true,
   }).map((line) => line.trim());

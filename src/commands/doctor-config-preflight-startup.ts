@@ -57,6 +57,7 @@ import {
   type planAutomaticConfigRepair,
   resolveStartupConfigSnapshot,
 } from "./doctor/shared/automatic-startup-config-repair.js";
+import type { PluginMigrationInspection } from "./doctor/shared/plugin-migration-availability.js";
 
 /** Admit the same config and state before the lease and again before migration writes. */
 export async function readStartupMigrationSnapshot(params: {
@@ -67,6 +68,7 @@ export async function readStartupMigrationSnapshot(params: {
   ) => ReturnType<typeof planAutomaticConfigRepair>;
   validateConfig?: (snapshot: ConfigFileSnapshot) => void | Promise<void>;
   beforeStateMigrations?: (snapshot: ConfigFileSnapshot) => Promise<boolean>;
+  deferredPluginMigrations?: readonly DeferredPluginMigration[];
   preparePluginMigrations?: (
     snapshot: ConfigFileSnapshot,
   ) => Promise<readonly DeferredPluginMigration[]>;
@@ -78,11 +80,13 @@ export async function readStartupMigrationSnapshot(params: {
         observe: false,
         isolateEnv: true,
         pluginValidation: "core-only",
+        deferredPluginMigrations: params.deferredPluginMigrations,
       });
       const recoveryOptions = { configPath: selected.path, observe: false, env: params.env };
       const coreRecovery = await createConfigIO({
         ...recoveryOptions,
         pluginValidation: "core-only",
+        deferredPluginMigrations: params.deferredPluginMigrations,
       }).prepareConfigRecovery(selected);
       const candidate = coreRecovery?.snapshot ?? selected;
       const startupConfig = resolveStartupConfigSnapshot(candidate);
@@ -215,7 +219,10 @@ export async function prepareDoctorMigrationPlugins(params: {
   snapshotRead: DoctorConfigPreflightPluginSnapshotRead;
   readRefreshedSnapshot: () => Promise<DoctorConfigPreflightPluginSnapshotRead>;
   beforeStateMigrations?: (snapshot: ConfigFileSnapshot) => Promise<boolean>;
-  onDeferredPlugins: (pending: readonly DeferredPluginMigration[]) => void;
+  onDeferredPlugins: (
+    pending: readonly DeferredPluginMigration[],
+    inspection?: PluginMigrationInspection,
+  ) => void;
 }): Promise<DoctorConfigPreflightPluginSnapshotRead> {
   if (params.converge) {
     params.lease?.heartbeat();
@@ -230,7 +237,7 @@ export async function prepareDoctorMigrationPlugins(params: {
     );
   }
   params.lease?.heartbeat();
-  params.onDeferredPlugins(convergence.deferredPlugins ?? []);
+  params.onDeferredPlugins(convergence.deferredPlugins ?? [], convergence.migrationInspection);
   if (!params.converge) {
     return params.snapshotRead;
   }

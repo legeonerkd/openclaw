@@ -16,7 +16,11 @@ import type {
 } from "../infra/state-migrations.types.js";
 import type { PluginMetadataSnapshotScopeRunner } from "../plugins/current-plugin-metadata-snapshot.js";
 import type { PluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.types.js";
-import { inspectPluginMigrationAvailability } from "./doctor/shared/plugin-migration-availability.js";
+import {
+  inspectPluginMigrationAvailability,
+  type PluginMigrationInspection,
+} from "./doctor/shared/plugin-migration-availability.js";
+import { readShippedPluginInstallConfigImportRecords } from "./doctor/shared/plugin-registry-migration.js";
 import { shouldDeferConfiguredPluginInstallRepair } from "./doctor/shared/update-phase.js";
 
 /** One preflight retains unavailable owners until their migration reports completion. */
@@ -37,6 +41,26 @@ export function createDoctorPluginMigrationPreparation(params: {
   let prepared = false;
   const completedIds = new Set<string>();
   const reportedIds = new Set<string>();
+  let statelessPluginIds = new Set<string>();
+  const inspectedStatelessPluginIds = new Set<string>();
+  const learn = (inspection: PluginMigrationInspection | undefined) => {
+    if (!inspection) {
+      return;
+    }
+    statelessPluginIds = new Set(inspection.statelessPluginIds);
+    for (const pluginId of inspection.requiredPluginIds) {
+      const pending = previousById.get(pluginId);
+      if (pending) {
+        previousById.set(pluginId, { ...pending, requiresStateMigration: true });
+      }
+    }
+    for (const pluginId of inspection.inspectionRequiredPluginIds) {
+      const pending = previousById.get(pluginId);
+      if (pending) {
+        previousById.set(pluginId, { ...pending, requiresDoctorInspection: true });
+      }
+    }
+  };
   const retain = (pending: DeferredPluginMigration) =>
     mergeDeferredPluginMigration(previousById.get(pending.pluginId), pending);
   const remember = () => {
@@ -46,13 +70,17 @@ export function createDoctorPluginMigrationPreparation(params: {
   };
   const prepare = async (snapshot: ConfigFileSnapshot) => {
     if (!prepared && params.enabled) {
-      deferred = (
-        await inspectPluginMigrationAvailability({
-          cfg: snapshot.sourceConfig,
+      const availability = await inspectPluginMigrationAvailability({
+        cfg: snapshot.sourceConfig,
+        env: params.env(),
+        installRecords: readShippedPluginInstallConfigImportRecords(snapshot, {
           env: params.env(),
-          deferInstallation: shouldDeferConfiguredPluginInstallRepair(params.env()),
-        })
-      ).map(retain);
+        }),
+        retainedPluginIds: [...previousById.keys()],
+        deferInstallation: shouldDeferConfiguredPluginInstallRepair(params.env()),
+      });
+      learn(availability);
+      deferred = availability.pending.map(retain);
       remember();
       prepared = true;
     }
@@ -111,7 +139,9 @@ export function createDoctorPluginMigrationPreparation(params: {
       pending: readonly DeferredPluginMigration[],
       snapshot: ConfigFileSnapshot,
       metadata: PluginMetadataSnapshot | undefined,
+      inspection?: PluginMigrationInspection,
     ) {
+      learn(inspection);
       deferred = pending.map((plugin) =>
         retain(
           Object.assign(
@@ -134,6 +164,15 @@ export function createDoctorPluginMigrationPreparation(params: {
       }
     },
     observe(result: MigrationMessages) {
+      for (const pluginId of result.requiredPluginIds ?? []) {
+        const pending = previousById.get(pluginId);
+        if (pending) {
+          previousById.set(pluginId, { ...pending, requiresStateMigration: true });
+        }
+      }
+      for (const pluginId of result.statelessPluginIds ?? []) {
+        inspectedStatelessPluginIds.add(pluginId);
+      }
       for (const pluginId of result.completedPluginIds ?? []) {
         completedIds.add(pluginId);
       }
@@ -142,10 +181,20 @@ export function createDoctorPluginMigrationPreparation(params: {
       if (!params.enabled) {
         return false;
       }
-      const resolvedPluginIds = [...previousById.keys()].filter((id) => completedIds.has(id));
       const unavailableIds = new Set(deferred.map((plugin) => plugin.pluginId));
+      const resolvedPluginIds = [...previousById.values()]
+        .filter(
+          (plugin) =>
+            completedIds.has(plugin.pluginId) ||
+            (!plugin.requiresStateMigration &&
+              !unavailableIds.has(plugin.pluginId) &&
+              (inspectedStatelessPluginIds.has(plugin.pluginId) ||
+                (!plugin.requiresDoctorInspection && statelessPluginIds.has(plugin.pluginId)))),
+        )
+        .map((plugin) => plugin.pluginId);
+      const resolvedIds = new Set(resolvedPluginIds);
       const pending = [...previousById.values()]
-        .filter((plugin) => !completedIds.has(plugin.pluginId))
+        .filter((plugin) => !resolvedIds.has(plugin.pluginId))
         .map((plugin) =>
           unavailableIds.has(plugin.pluginId)
             ? plugin

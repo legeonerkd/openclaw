@@ -12,6 +12,7 @@ import {
 } from "../plugins/runtime-degraded-state.js";
 import { resolveCompatibilityHostVersion } from "../version.js";
 import { measureDoctorConfigPreflightStep } from "./doctor-config-preflight-measure.js";
+import type { PluginMigrationInspection } from "./doctor/shared/plugin-migration-availability.js";
 import { shouldDeferConfiguredPluginInstallRepair } from "./doctor/shared/update-phase.js";
 
 type StartupPluginVerificationDiagnostic = {
@@ -23,6 +24,7 @@ type StartupPluginConvergenceResult = {
   blockingDiagnostic: StartupPluginVerificationDiagnostic | null;
   quarantinedPlugins: DegradedPlugin[];
   deferredPlugins?: DeferredPluginMigration[];
+  migrationInspection?: PluginMigrationInspection;
 };
 
 async function planStartupPluginVerification(params: {
@@ -93,13 +95,14 @@ export async function runDoctorPluginConvergence(params: {
     await import("./doctor/shared/plugin-migration-availability.js");
   if (shouldDeferConfiguredPluginInstallRepair(params.env)) {
     const payloads = await verifyStartupPluginPayloads(params, plan.installRecords);
-    const pending = await inspectPluginMigrationAvailability({
+    const { pending, ...migrationInspection } = await inspectPluginMigrationAvailability({
       ...params,
       installRecords: plan.installRecords,
       deferInstallation: true,
     });
     return {
       ...payloads,
+      migrationInspection,
       deferredPlugins: [
         ...new Map(
           [...(payloads.deferredPlugins ?? []), ...pending].map((entry) => [entry.pluginId, entry]),
@@ -143,15 +146,12 @@ export async function runDoctorPluginConvergence(params: {
     failures: convergence.smokeFailures,
   });
   const quarantinedPluginIds = new Set(quarantinedPlugins.map((plugin) => plugin.pluginId));
-  const deferredPlugins = new Map(
-    (
-      await inspectPluginMigrationAvailability({
-        ...params,
-        installRecords: convergence.installRecords,
-        deferInstallation: false,
-      })
-    ).map((pending) => [pending.pluginId, pending]),
-  );
+  const { pending, ...migrationInspection } = await inspectPluginMigrationAvailability({
+    ...params,
+    installRecords: convergence.installRecords,
+    deferInstallation: false,
+  });
+  const deferredPlugins = new Map(pending.map((plugin) => [plugin.pluginId, plugin]));
   for (const warning of convergence.warnings) {
     if (warning.pluginId && !quarantinedPluginIds.has(warning.pluginId)) {
       deferredPlugins.set(warning.pluginId, {
@@ -203,6 +203,11 @@ export async function runDoctorPluginConvergence(params: {
         ? { kind: "plugin-verification", messages: blockingMessages }
         : null,
     quarantinedPlugins,
+    ...(migrationInspection.requiredPluginIds.length > 0 ||
+    migrationInspection.inspectionRequiredPluginIds.length > 0 ||
+    migrationInspection.statelessPluginIds.length > 0
+      ? { migrationInspection }
+      : {}),
     ...(deferredPlugins.size > 0 ? { deferredPlugins: [...deferredPlugins.values()] } : {}),
   };
 }

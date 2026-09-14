@@ -3022,11 +3022,21 @@ async function runLegacyStateMigrationSteps(
 
 function completedPluginMigrationFields(
   sources: readonly MigrationMessages[],
-): Pick<MigrationMessages, "completedPluginIds"> {
+): Pick<MigrationMessages, "completedPluginIds" | "requiredPluginIds" | "statelessPluginIds"> {
   const completedPluginIds = [
     ...new Set(sources.flatMap((source) => source.completedPluginIds ?? [])),
   ].toSorted();
-  return completedPluginIds.length > 0 ? { completedPluginIds } : {};
+  const requiredPluginIds = [
+    ...new Set(sources.flatMap((source) => source.requiredPluginIds ?? [])),
+  ].toSorted();
+  const statelessPluginIds = [
+    ...new Set(sources.flatMap((source) => source.statelessPluginIds ?? [])),
+  ].toSorted();
+  return {
+    ...(completedPluginIds.length > 0 ? { completedPluginIds } : {}),
+    ...(requiredPluginIds.length > 0 ? { requiredPluginIds } : {}),
+    ...(statelessPluginIds.length > 0 ? { statelessPluginIds } : {}),
+  };
 }
 
 export async function runLegacyStateMigrations(params: {
@@ -3141,6 +3151,8 @@ export async function autoMigrateLegacyState(params: {
   warnings: string[];
   notices?: string[];
   completedPluginIds?: readonly string[];
+  requiredPluginIds?: readonly string[];
+  statelessPluginIds?: readonly string[];
   stepReceipts: LegacyStateMigrationStepReceipt[];
   postSessionPluginMigration?: PreparedPostSessionPluginMigration;
 }> {

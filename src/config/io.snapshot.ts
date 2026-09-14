@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { readDeferredPluginMigrations } from "../infra/deferred-plugin-migrations.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { findStartupMaintenanceRequiredError } from "../infra/startup-maintenance-required.js";
 import { withPluginMetadataSnapshotScope } from "../plugins/current-plugin-metadata-snapshot.js";
@@ -247,8 +246,7 @@ export async function readConfigFileSnapshotInternal(
       env: deps.env,
       allowCurrentPluginMetadata: options.allowCurrentPluginMetadata,
     });
-    const deferredPluginMigrations =
-      context.options.deferredPluginMigrations ?? readDeferredPluginMigrations({ env: deps.env });
+    const deferredPluginMigrations = context.resolveDeferredPluginMigrations();
     const validated = await deps.measure("config.snapshot.read.validate", () =>
       validateConfigObjectWithPlugins(validationConfigRaw, {
         ...pathResolution,

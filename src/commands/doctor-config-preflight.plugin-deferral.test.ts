@@ -70,7 +70,279 @@ async function installMigrationFixture(params: {
   );
 }
 
+async function installStatelessFixture(
+  root: string,
+  pluginId: string,
+  contract:
+    | "absent"
+    | "declared-empty"
+    | "config-only"
+    | "broken"
+    | "setup-only"
+    | "setup-invalid-detector"
+    | "setup-broken" = "absent",
+) {
+  const setup =
+    contract === "setup-only" ||
+    contract === "setup-broken" ||
+    contract === "setup-invalid-detector";
+  await fs.mkdir(root, { recursive: true });
+  await fs.writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify({
+      name: "@example/stateless-fixture",
+      version: "1.0.0",
+      openclaw: {
+        extensions: ["./index.cjs"],
+        ...(setup ? { setupEntry: "./setup-entry.cjs" } : {}),
+      },
+    }),
+  );
+  await fs.writeFile(path.join(root, "index.cjs"), "module.exports = {};\n");
+  await fs.writeFile(
+    path.join(root, "openclaw.plugin.json"),
+    JSON.stringify({
+      id: pluginId,
+      ...(setup
+        ? {
+            channels: [pluginId],
+            channelConfigs: {
+              [pluginId]: {
+                schema: { type: "object", properties: {}, additionalProperties: false },
+              },
+            },
+          }
+        : {}),
+      ...(contract === "declared-empty" ? { doctorContract: { stateMigrations: [] } } : {}),
+      configSchema: {
+        type: "object",
+        properties: { region: { type: "string" }, legacyBinding: { type: "string" } },
+        additionalProperties: false,
+      },
+    }),
+  );
+  if (contract !== "absent" && !setup) {
+    await fs.writeFile(
+      path.join(root, "doctor-contract-api.cjs"),
+      contract === "broken"
+        ? 'throw new Error("Fixture Doctor contract unavailable");\n'
+        : contract === "declared-empty"
+          ? "module.exports = { stateMigrations: [] };\n"
+          : "module.exports = { normalizeCompatibilityConfig: ({ cfg }) => ({ config: cfg, changes: [] }) };\n",
+    );
+  }
+  if (setup) {
+    await fs.writeFile(
+      path.join(root, "setup-entry.cjs"),
+      contract === "setup-broken"
+        ? 'throw new Error("Fixture setup contract unavailable");\n'
+        : contract === "setup-invalid-detector"
+          ? 'module.exports = { kind: "bundled-channel-setup-entry", loadSetupPlugin() { return {}; }, loadLegacyStateMigrationDetector() { return undefined; } };\n'
+          : 'module.exports = { kind: "bundled-channel-setup-entry", loadSetupPlugin() { return {}; } };\n',
+    );
+  }
+}
+
 describe("configured plugin migration deferral", () => {
+  it.each([
+    { preparePluginMetadataSnapshot: true, contract: "absent" as const, nextDoctor: false },
+    { preparePluginMetadataSnapshot: false, contract: "absent" as const, nextDoctor: false },
+    { preparePluginMetadataSnapshot: true, contract: "declared-empty" as const, nextDoctor: false },
+    { preparePluginMetadataSnapshot: true, contract: "config-only" as const, nextDoctor: false },
+    { preparePluginMetadataSnapshot: true, contract: "setup-only" as const, nextDoctor: false },
+    { preparePluginMetadataSnapshot: true, contract: "absent" as const, nextDoctor: true },
+  ])(
+    "clears installation-only deferral for $contract (metadata=$preparePluginMetadataSnapshot, next Doctor=$nextDoctor)",
+    async ({ preparePluginMetadataSnapshot, contract, nextDoctor }) => {
+      await withDoctorConfigPreflightHome(async (home) => {
+        const configPath = path.join(home, ".openclaw", "openclaw.json");
+        const pluginRoot = path.join(home, "stateless-plugin");
+        const pluginId = "stateless-fixture";
+        const config = {
+          gateway: { mode: "local" },
+          plugins: {
+            allow: [pluginId],
+            entries: { [pluginId]: { enabled: true, config: { region: "us-en" } } },
+            load: { paths: [pluginRoot] },
+          },
+        };
+        await fs.mkdir(path.dirname(configPath), { recursive: true });
+        await fs.writeFile(configPath, JSON.stringify(config));
+        let installed = false;
+        await withEnvAsync({ OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1" }, async () => {
+          if (nextDoctor) {
+            await fs.writeFile(
+              configPath,
+              JSON.stringify({
+                ...config,
+                plugins: { ...config.plugins, load: { paths: [] } },
+              }),
+            );
+            await runDoctorConfigPreflight({
+              migrateLegacyConfig: false,
+              invalidConfigNote: false,
+              doctorOnlyStateMigrations: true,
+              repairPrefixedConfig: true,
+              preparePluginMetadataSnapshot,
+            });
+            expect(readDeferredPluginMigrations()).toEqual([expect.objectContaining({ pluginId })]);
+            await installStatelessFixture(pluginRoot, pluginId, contract);
+            installed = true;
+            await fs.writeFile(configPath, JSON.stringify(config));
+          }
+          const result = await runDoctorConfigPreflight({
+            migrateLegacyConfig: false,
+            invalidConfigNote: false,
+            doctorOnlyStateMigrations: true,
+            repairPrefixedConfig: true,
+            preparePluginMetadataSnapshot,
+            beforeStateMigrations: async (snapshot) => {
+              if (snapshot && !installed) {
+                await installStatelessFixture(pluginRoot, pluginId, contract);
+                installed = true;
+              }
+              return true;
+            },
+          });
+          expect(installed).toBe(true);
+          expect(result.snapshot.valid).toBe(true);
+          expect(readDeferredPluginMigrations()).toEqual([]);
+          const checked = await readConfigFileSnapshot();
+          expect(checked.valid).toBe(true);
+          expect(checked.warnings).toEqual([]);
+          expect(checked.sourceConfig.plugins?.entries?.[pluginId]?.config).toEqual({
+            region: "us-en",
+          });
+        });
+      });
+    },
+  );
+
+  it.each(["doctor", "setup", "setup-invalid-detector"] as const)(
+    "keeps failed %s inspection debt after the artifact disappears",
+    async (kind) => {
+      await withDoctorConfigPreflightHome(async (home) => {
+        const configPath = path.join(home, ".openclaw", "openclaw.json");
+        const pluginRoot = path.join(home, "inspection-plugin");
+        const pluginId = "inspection-fixture";
+        const config = {
+          gateway: { mode: "local" },
+          plugins: {
+            allow: [pluginId],
+            entries: { [pluginId]: { enabled: true, config: { region: "us-en" } } },
+          },
+        };
+        await fs.mkdir(path.dirname(configPath), { recursive: true });
+        await fs.writeFile(configPath, JSON.stringify(config));
+        const options = {
+          migrateLegacyConfig: false,
+          invalidConfigNote: false,
+          doctorOnlyStateMigrations: true,
+          repairPrefixedConfig: true,
+          preparePluginMetadataSnapshot: true,
+        } as const;
+        await withEnvAsync({ OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1" }, async () => {
+          await runDoctorConfigPreflight(options);
+          await installStatelessFixture(
+            pluginRoot,
+            pluginId,
+            kind === "doctor"
+              ? "broken"
+              : kind === "setup-invalid-detector"
+                ? kind
+                : "setup-broken",
+          );
+          await fs.writeFile(
+            configPath,
+            JSON.stringify({
+              ...config,
+              plugins: { ...config.plugins, load: { paths: [pluginRoot] } },
+            }),
+          );
+          await runDoctorConfigPreflight(options);
+          expect(readDeferredPluginMigrations()).toEqual([
+            expect.objectContaining({ pluginId, requiresDoctorInspection: true }),
+          ]);
+          await fs.unlink(
+            path.join(
+              pluginRoot,
+              kind === "doctor" ? "doctor-contract-api.cjs" : "setup-entry.cjs",
+            ),
+          );
+          await installStatelessFixture(pluginRoot, pluginId);
+          await runDoctorConfigPreflight(options);
+          expect(readDeferredPluginMigrations()).toEqual([
+            expect.objectContaining({ pluginId, requiresDoctorInspection: true }),
+          ]);
+          await installStatelessFixture(
+            pluginRoot,
+            pluginId,
+            kind === "doctor" ? "config-only" : "setup-only",
+          );
+          await runDoctorConfigPreflight(options);
+          expect(readDeferredPluginMigrations()).toEqual([]);
+          expect((await readConfigFileSnapshot()).warnings).toEqual([]);
+        });
+      });
+    },
+  );
+
+  it("retains a required migration learned while the installed plugin is disabled", async () => {
+    await withDoctorConfigPreflightHome(async (home) => {
+      const configPath = path.join(home, ".openclaw", "openclaw.json");
+      const pluginRoot = path.join(home, "learned-plugin");
+      const source = path.join(home, "legacy-binding.json");
+      const migrated = path.join(home, "migrated-binding.json");
+      const pluginId = "learned-fixture";
+      const entry = { enabled: true, config: { legacyBinding: source } };
+      const config = {
+        gateway: { mode: "local" },
+        plugins: { allow: [pluginId], entries: { [pluginId]: entry } },
+      };
+      await fs.mkdir(path.dirname(configPath), { recursive: true });
+      await fs.writeFile(configPath, JSON.stringify(config));
+      await fs.writeFile(source, '{"binding":"retained"}\n');
+      const options = {
+        migrateLegacyConfig: false,
+        invalidConfigNote: false,
+        doctorOnlyStateMigrations: true,
+        repairPrefixedConfig: true,
+        preparePluginMetadataSnapshot: true,
+      } as const;
+      await withEnvAsync({ OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1" }, async () => {
+        await runDoctorConfigPreflight(options);
+        expect(readDeferredPluginMigrations()).toEqual([expect.objectContaining({ pluginId })]);
+        await installMigrationFixture({ root: pluginRoot, pluginId, source, migrated });
+        const loadedPlugins = { ...config.plugins, load: { paths: [pluginRoot] } };
+        await fs.writeFile(
+          configPath,
+          JSON.stringify({
+            ...config,
+            plugins: { ...loadedPlugins, entries: { [pluginId]: { ...entry, enabled: false } } },
+          }),
+        );
+        await runDoctorConfigPreflight(options);
+        expect(readDeferredPluginMigrations()).toEqual([
+          expect.objectContaining({ pluginId, requiresStateMigration: true }),
+        ]);
+        expect(await fs.readFile(source, "utf8")).toBe('{"binding":"retained"}\n');
+
+        await fs.unlink(path.join(pluginRoot, "doctor-contract-api.cjs"));
+        await installStatelessFixture(pluginRoot, pluginId);
+        await fs.writeFile(configPath, JSON.stringify({ ...config, plugins: loadedPlugins }));
+        const retained = await runDoctorConfigPreflight(options);
+        expect(retained.snapshot.valid).toBe(true);
+        expect(readDeferredPluginMigrations()).toEqual([
+          expect.objectContaining({ pluginId, requiresStateMigration: true }),
+        ]);
+        expect(await fs.readFile(source, "utf8")).toBe('{"binding":"retained"}\n');
+        expect(retained.snapshot.sourceConfig.plugins?.entries?.[pluginId]?.config).toEqual(
+          entry.config,
+        );
+      });
+    });
+  });
+
   it.each([true, false])(
     "retires same-Doctor deferral inputs with prepared metadata: %s",
     async (preparePluginMetadataSnapshot) => {

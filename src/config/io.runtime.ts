@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import { expectDefined } from "@openclaw/normalization-core";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import {
+  readDeferredPluginMigrations,
+  type DeferredPluginMigration,
+} from "../infra/deferred-plugin-migrations.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { recordUpdateDoctorConfigWrite } from "../infra/update-doctor-result.js";
 import { cloneEnvWithPlatformSemantics, createConfigRuntimeEnvBase } from "./config-env-vars.js";
@@ -122,12 +126,17 @@ export function getRuntimeConfig(options?: {
   return loadConfig(options);
 }
 
-function createCurrentConfigReader(params: { configPath?: string; env?: NodeJS.ProcessEnv }) {
+function createCurrentConfigReader(params: {
+  configPath?: string;
+  env?: NodeJS.ProcessEnv;
+  deferredPluginMigrations?: readonly DeferredPluginMigration[];
+}) {
   return createConfigIO({
     configPath: params.configPath,
     env: cloneEnvWithPlatformSemantics(params.env ?? process.env),
     observe: false,
     pluginValidation: "core-only",
+    deferredPluginMigrations: params.deferredPluginMigrations,
     shellEnvFallback: "defer",
     suppressFutureVersionWarning: true,
     logger: { warn: () => {}, error: () => {} },
@@ -180,7 +189,10 @@ export function readCurrentConfigForPolicyCheck(params: {
   configPath: string;
   env: NodeJS.ProcessEnv;
 }): OpenClawConfig {
-  return createCurrentConfigReader(params).loadConfig({ skipSuspiciousRecovery: true });
+  return createCurrentConfigReader({
+    ...params,
+    deferredPluginMigrations: readDeferredPluginMigrations({ env: params.env }),
+  }).loadConfig({ skipSuspiciousRecovery: true });
 }
 
 export async function readBestEffortConfig(options?: {

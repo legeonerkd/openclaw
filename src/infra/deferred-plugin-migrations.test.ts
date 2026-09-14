@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -80,7 +81,7 @@ describe("deferred configured-plugin migrations", () => {
   });
 
   it("retains pending migrations across restart and resolves only the completed plugin", () => {
-    const { env } = fixture();
+    const { env, stateDir } = fixture();
     const alpha = {
       pluginId: "alpha",
       reason: "The configured plugin is not installed.",
@@ -99,7 +100,19 @@ describe("deferred configured-plugin migrations", () => {
 
     recordDeferredPluginMigrations({ env, pending: [alpha, beta] });
     closeOpenClawStateDatabaseForTest();
+    const sharedStateDir = path.join(stateDir, "state");
+    const snapshot = () =>
+      Object.fromEntries(
+        fs.readdirSync(sharedStateDir).map((name) => [
+          name,
+          createHash("sha256")
+            .update(fs.readFileSync(path.join(sharedStateDir, name)))
+            .digest("hex"),
+        ]),
+      );
+    const beforeRead = snapshot();
     expect(readDeferredPluginMigrations({ env })).toEqual([alpha, beta]);
+    expect(snapshot()).toEqual(beforeRead);
     expect(log.warn).toHaveBeenCalledWith(
       expect.stringContaining('Plugin "alpha" state migration is pending:'),
       { pluginId: "alpha", reason: alpha.reason, action: alpha.command, status: "pending" },
@@ -129,6 +142,8 @@ describe("deferred configured-plugin migrations", () => {
     const { env } = fixture();
     const declared = {
       pluginId: "fixture-plugin",
+      requiresStateMigration: true as const,
+      requiresDoctorInspection: true as const,
       reason: "Package convergence is pending.",
       command: "openclaw update repair",
       configPaths: [["legacyIntegration", "stateDirectory"]],

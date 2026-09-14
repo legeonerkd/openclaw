@@ -23,6 +23,12 @@ fields remain inactive. After installing or repairing the plugin, run
 During an update driven by an older version, plugin installation can remain
 deferred until that updater finishes; its pending inputs receive the same
 protection.
+Session edits and deletions made after the core import remain authoritative when
+the plugin migration resumes.
+
+While a migration is pending, explicit config edits that would change or remove
+its retained inputs are refused with the recovery command. Unrelated settings
+remain writable. Complete the plugin migration before editing those inputs.
 
 ## Schema publication during a 2026.9.2 update
 

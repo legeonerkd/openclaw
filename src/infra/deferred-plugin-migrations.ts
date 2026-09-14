@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { createSubsystemLogger } from "../logging/subsystem.js";
-import { withExistingOpenClawStateDatabaseReadOnly } from "../state/openclaw-state-db-readonly.js";
+import { withExistingOpenClawStateDatabaseArtifactPreservingReadOnly } from "../state/openclaw-state-db-readonly.js";
 import { tableExists } from "../state/openclaw-state-db-schema-helpers.js";
 import type { DB } from "../state/openclaw-state-db.generated.js";
 import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js";
@@ -14,6 +14,8 @@ const deferredPluginMigrationSchema = z.object({
   pluginId: z.string().min(1),
   reason: z.string().min(1),
   command: z.string().min(1),
+  requiresStateMigration: z.literal(true).optional(),
+  requiresDoctorInspection: z.literal(true).optional(),
   configPaths: z.array(z.array(z.string().min(1)).min(1)).optional(),
   validationExcludedPaths: z.array(z.array(z.string().min(1)).min(1)).optional(),
 });
@@ -39,6 +41,12 @@ export function mergeDeferredPluginMigration(
     pluginId: current.pluginId,
     reason: current.reason,
     command: current.command,
+    ...(previous?.requiresStateMigration || current.requiresStateMigration
+      ? { requiresStateMigration: true as const }
+      : {}),
+    ...(previous?.requiresDoctorInspection || current.requiresDoctorInspection
+      ? { requiresDoctorInspection: true as const }
+      : {}),
     ...(configPaths.length > 0 ? { configPaths } : {}),
     ...(validationExcludedPaths.length > 0 ? { validationExcludedPaths } : {}),
   };
@@ -59,7 +67,7 @@ export function readDeferredPluginMigrations(
   options: { env?: NodeJS.ProcessEnv } = {},
 ): readonly DeferredPluginMigration[] {
   return (
-    withExistingOpenClawStateDatabaseReadOnly(({ db }) => {
+    withExistingOpenClawStateDatabaseArtifactPreservingReadOnly(({ db }) => {
       if (!tableExists(db, "migration_runs")) {
         return [];
       }

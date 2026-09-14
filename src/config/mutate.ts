@@ -1163,12 +1163,13 @@ async function replaceConfigFileUnlocked(
       });
   const { snapshot, writeOptions } = prepared;
   const deferredPluginMigrations = readDeferredPluginMigrations({ env: params.io?.env });
+  const mergedWriteOptions = mergeConfigMutationWriteOptions(writeOptions, params.writeOptions);
   const nextConfig = preserveDeferredPluginMigrationConfig({
     sourceConfig: snapshot.sourceConfig,
     nextConfig: params.sourceConfig ?? params.nextConfig,
     pending: deferredPluginMigrations,
+    writeOptions: mergedWriteOptions,
   });
-  const mergedWriteOptions = mergeConfigMutationWriteOptions(writeOptions, params.writeOptions);
   mergedWriteOptions.inputBase = params.sourceConfig ? "source" : mergedWriteOptions.inputBase;
   mergedWriteOptions.assertConfigPathForWrite?.();
   assertExpectedConfigPathMatches(snapshot, mergedWriteOptions.expectedConfigPath);

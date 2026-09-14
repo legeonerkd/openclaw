@@ -1,4 +1,3 @@
-import { readDeferredPluginMigrations } from "../infra/deferred-plugin-migrations.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { DuplicateAgentDirError, findDuplicateAgentDirs } from "./agent-dirs.js";
 import type { ConfigIoContext } from "./io.context.js";
@@ -102,8 +101,7 @@ export function loadConfigFromContext(
       effectiveConfigRaw,
       env: deps.env,
     });
-    const deferredPluginMigrations =
-      context.options.deferredPluginMigrations ?? readDeferredPluginMigrations({ env: deps.env });
+    const deferredPluginMigrations = context.resolveDeferredPluginMigrations();
     const validated = validateConfigObjectWithPlugins(validationConfigRaw, {
       ...pathResolution,
       pluginValidation: context.options.pluginValidation,

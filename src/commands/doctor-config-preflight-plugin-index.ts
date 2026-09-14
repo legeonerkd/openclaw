@@ -131,6 +131,7 @@ export async function readDoctorConfigPreflightSnapshot(params: {
       const core = await readConfigFileSnapshot({
         ...sharedOptions,
         pluginValidation: "core-only",
+        deferredPluginMigrations: deferred,
       });
       await params.prepareSnapshot?.(core);
       deferred = await params.preparePluginMigrations(core);

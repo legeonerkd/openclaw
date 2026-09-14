@@ -8,6 +8,7 @@ import { createPluginManifestRecordFixture } from "../plugins/plugin-metadata.te
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import { resolveDeferredPluginMigrationConfigPaths } from "./deferred-plugin-migration-config.js";
 import { createConfigIO } from "./io.factory.js";
+import { readCurrentConfigForPolicyCheck } from "./io.runtime.js";
 import { resolveSessionStoreCompatibilityAgentId } from "./legacy.default-agent-owner.js";
 import { migratePersistedImplicitMainRoster } from "./legacy.roster.js";
 import {
@@ -68,7 +69,7 @@ describe("config IO with deferred plugin migrations", () => {
       env,
       configPath,
       observe: false,
-      pluginValidation: "core-only",
+      pluginValidation: "skip",
       shellEnvFallback: "defer",
     });
     const snapshot = await io.readConfigFileSnapshot();
@@ -78,6 +79,34 @@ describe("config IO with deferred plugin migrations", () => {
     expect(snapshot.config).not.toHaveProperty("legacySample");
     expect(snapshot.sourceConfig).toHaveProperty("legacySample.root", `${env.SESSION_ROOT}/legacy`);
     expect(io.loadConfig().gateway?.port).toBe(18789);
+    const policyConfig = readCurrentConfigForPolicyCheck({ env, configPath });
+    expect(policyConfig.gateway?.port).toBe(18789);
+    expect(policyConfig).not.toHaveProperty("legacySample");
+
+    const replacement = structuredClone(snapshot.sourceConfig);
+    replacement.plugins = { entries: { sample: { config: { legacyRoot: "/srv/replacement" } } } };
+    await expect(
+      io.writeConfigFile(replacement, {
+        explicitSetPaths: [["plugins", "entries", "sample", "config", "legacyRoot"]],
+        skipPluginValidation: true,
+        skipRuntimeSnapshotRefresh: true,
+      }),
+    ).rejects.toThrow('Plugin "sample" state migration is pending');
+    await expect(
+      io.writeConfigFile(replacement, {
+        auditOrigin: "config-rpc",
+        skipPluginValidation: true,
+        skipRuntimeSnapshotRefresh: true,
+      }),
+    ).rejects.toThrow('Plugin "sample" state migration is pending');
+    await expect(
+      io.writeConfigFile(snapshot.sourceConfig, {
+        unsetPaths: [["plugins", "entries", "sample", "config"]],
+        skipPluginValidation: true,
+        skipRuntimeSnapshotRefresh: true,
+      }),
+    ).rejects.toThrow('Plugin "sample" state migration is pending');
+    expect(fs.readFileSync(configPath, "utf8")).toBe(JSON.stringify(source));
 
     await io.writeConfigFile(
       { gateway: { mode: "local", port: 18790 } },

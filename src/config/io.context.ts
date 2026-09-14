@@ -2,7 +2,10 @@ import crypto from "node:crypto";
 import { ensureOwnerDisplaySecret } from "../agents/owner-display.js";
 import { classifyOtelGrpcMigrationOwnership } from "../commands/doctor/shared/include-migration-ownership.js";
 import { applyLegacyDoctorMigrations } from "../commands/doctor/shared/legacy-config-compat.js";
-import { readDeferredPluginMigrations } from "../infra/deferred-plugin-migrations.js";
+import {
+  readDeferredPluginMigrations,
+  type DeferredPluginMigration,
+} from "../infra/deferred-plugin-migrations.js";
 import {
   loadShellEnvFallback,
   resolveShellEnvFallbackTimeoutMs,
@@ -52,6 +55,7 @@ export type ConfigIoContext = {
   pathResolution: { env: NodeJS.ProcessEnv; homedir?: () => string };
   configPath: string;
   options: ConfigIoFactoryOptions;
+  resolveDeferredPluginMigrations: () => readonly DeferredPluginMigration[];
   observeLoadConfigSnapshot: (snapshot: ConfigFileSnapshot) => ConfigFileSnapshot;
   finalizeLoadedRuntimeConfig: (config: OpenClawConfig) => OpenClawConfig;
   createValidationPluginMetadataSnapshotLoader: (params: {
@@ -75,6 +79,16 @@ export function createConfigIoContext(options: ConfigIoFactoryOptions = {}): Con
   // The normalized default homedir already applies OPENCLAW_HOME. Path
   // resolvers need the original OS-home fallback or relative overrides expand twice.
   const pathResolution = { env: deps.env, homedir: options.homedir };
+
+  function resolveDeferredPluginMigrations(): readonly DeferredPluginMigration[] {
+    // Core-only admission cannot inspect plugin state before database readiness is known.
+    return (
+      options.deferredPluginMigrations ??
+      (options.pluginValidation === "core-only"
+        ? []
+        : readDeferredPluginMigrations({ env: deps.env }))
+    );
+  }
 
   function observeLoadConfigSnapshot(snapshot: ConfigFileSnapshot): ConfigFileSnapshot {
     if (deps.observe) {
@@ -199,8 +213,7 @@ export function createConfigIoContext(options: ConfigIoFactoryOptions = {}): Con
       }
       // Recovery is a migration boundary, not runtime compatibility: the canonical Doctor
       // registry owns historical shapes before current-schema validation and any disk write.
-      const deferredPluginMigrations =
-        options.deferredPluginMigrations ?? readDeferredPluginMigrations({ env: deps.env });
+      const deferredPluginMigrations = resolveDeferredPluginMigrations();
       const migrated = applyLegacyDoctorMigrations(candidate.parsed, {
         authoredRaw: candidate.parsed,
         resolvedRaw: originalResolution.resolvedConfigRaw,
@@ -261,6 +274,7 @@ export function createConfigIoContext(options: ConfigIoFactoryOptions = {}): Con
     pathResolution,
     configPath,
     options,
+    resolveDeferredPluginMigrations,
     observeLoadConfigSnapshot,
     finalizeLoadedRuntimeConfig,
     createValidationPluginMetadataSnapshotLoader,

@@ -181,6 +181,10 @@ export type MigrationMessages = {
   notices?: string[];
   /** Active plugin owners whose required migration phases were inspected and completed. */
   completedPluginIds?: readonly string[];
+  /** Actual loaded migration contracts, independent of detector or writer success. */
+  requiredPluginIds?: readonly string[];
+  /** Successful contract inspection found no state actions; this is not completion proof. */
+  statelessPluginIds?: readonly string[];
   rehearsal?: { outsideRootLegacyFileCount: number };
   /** The owner classified every warning as advisory, including a source-preserving skip. */
   warningDisposition?: "recoverable";
