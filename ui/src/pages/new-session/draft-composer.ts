@@ -7,6 +7,7 @@ import { icons } from "../../components/icons.ts";
 import { resolveIdentityAvatarView } from "../../components/identity-avatar-view.ts";
 import type { ImageLightboxItem } from "../../components/image-lightbox.ts";
 import { t } from "../../i18n/index.ts";
+import { registerNewSessionSetupEnglish } from "../../i18n/locales/en-new-session-setup.ts";
 import type { HumanMention } from "../../lib/chat/chat-types.ts";
 import { normalizeMessage } from "../../lib/chat/message-normalizer.ts";
 import { formatSenderLabel } from "../../lib/chat/sender-label.ts";
@@ -41,6 +42,8 @@ import { isWorktreeNameValid, type NewSessionVisibility } from "./create-params.
 import type { DraftPlaceState } from "./draft-place-state.ts";
 import type { DraftSubmissionFlow } from "./draft-submission-flow.ts";
 import type { NewSessionModelControl } from "./model-control.ts";
+
+registerNewSessionSetupEnglish();
 
 function renderDraftError(message: string, action?: { label: string; onClick: () => void }) {
   return html`

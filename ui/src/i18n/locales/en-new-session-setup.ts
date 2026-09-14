@@ -24,11 +24,20 @@ const enNewSessionSetup = {
     autoDeviceScope: "Connected devices only",
     cloudRequiresWorktree: "Cloud needs a Git checkout",
     restoringPreferences: "Restoring your last session setup…",
+    createOutcomeUnknown:
+      "The Gateway changed while this session was starting. Check recent sessions before starting this task again.",
+    placementSetupInterrupted:
+      "This session's runner setup was interrupted. Check recent sessions before starting this task again.",
     checkingPlace: "Checking the selected place…",
+    worktreeNameInvalid: "Use lowercase letters, digits, and dashes.",
     agentsUnavailable: "No agents are available on this Gateway yet.",
     terminalHostUnavailable:
       "Native CLI host unavailable. Check that the CLI is installed and the node is connected with its fresh-start command approved, then retry the catalog.",
     terminalDisabled: "Enable CLI agents and terminals in Gateway settings to start a native CLI.",
+    terminalAttachmentsUnsupported:
+      "Remove attachments before starting a native CLI. Add files from the terminal after it opens.",
+    terminalCapabilityOverridesUnsupported:
+      "Clear session capability overrides before starting in a terminal.",
     terminalPlacementUnsupported:
       "Native CLI sessions use a specific host, not OpenClaw worker placement. Reset this draft and choose a native host.",
     terminalNeedsFolder: "Pick a folder before starting in a terminal.",

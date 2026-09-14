@@ -1027,7 +1027,6 @@ export const en: TranslationMap & {
     worktreeName: "Name",
     worktreeNamePlaceholder: "Named from the session title",
     worktreeBranchNote: "Creates branch openclaw/<name> in a separate checkout.",
-    worktreeNameInvalid: "Use lowercase letters, digits, and dashes.",
     incognito: "Incognito",
     incognitoDescription: "Keep this session only until the Gateway restarts",
     draft: "Draft",
@@ -1044,21 +1043,13 @@ export const en: TranslationMap & {
       "No native CLI is available. Install it on the Gateway or connect a machine with CLI access, then reconnect to the Gateway.",
     nativeTerminalPrompt: "Optional initial prompt for the native CLI",
     terminalNodeFolder: "Existing absolute folder on this node",
-    terminalAttachmentsUnsupported:
-      "Remove attachments before starting a native CLI. Add files from the terminal after it opens.",
     starting: "Starting…",
     createFailed: "Couldn't create the session.",
-    createOutcomeUnknown:
-      "The Gateway changed while this session was starting. Check recent sessions before starting this task again.",
     cliAgentsGroup: "CLI agents",
     cliAgentsUnavailable: "CLI agents unavailable",
-    placementSetupInterrupted:
-      "This session's runner setup was interrupted. Check recent sessions before starting this task again.",
     catalogUnavailable: "This session target is unavailable.",
     placementNotReady: "The selected runner isn't ready yet. Try again in a moment.",
     nodeUnavailable: "The selected device is unavailable. Pick another place.",
-    terminalCapabilityOverridesUnsupported:
-      "Clear session capability overrides before starting in a terminal.",
     what: "What",
     checkout: "Checkout",
     checkoutCurrent: "Current checkout",
