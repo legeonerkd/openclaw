@@ -6,6 +6,28 @@ import { createGatewayHarness } from "./config-test-harness.ts";
 import { createRuntimeConfigCapability } from "./runtime-config-capability.ts";
 
 describe("runtime config load subscriptions", () => {
+  it("clears a settled load when an observer throws so an explicit retry can read again", async () => {
+    const request = vi.fn().mockRejectedValueOnce(new Error("temporarily unavailable"));
+    request.mockResolvedValue({ config: {}, hash: "ready", valid: true, issues: [] });
+    const { gateway } = createGatewayHarness({ request } as unknown as GatewayBrowserClient);
+    const runtimeConfig = createRuntimeConfigCapability(gateway);
+    const unsubscribe = runtimeConfig.subscribe((state) => {
+      if (!state.configLoading && !state.configSnapshot) {
+        throw new Error("observer failed");
+      }
+    });
+    try {
+      await expect(runtimeConfig.ensureLoaded()).rejects.toThrow("observer failed");
+      unsubscribe();
+      await runtimeConfig.ensureLoaded();
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(runtimeConfig.state.configSnapshot?.hash).toBe("ready");
+    } finally {
+      unsubscribe();
+      runtimeConfig.dispose();
+    }
+  });
+
   it("shares a background refresh with an editor ensuring its first snapshot", async () => {
     const response = createDeferredCore<{
       config: Record<string, unknown>;
