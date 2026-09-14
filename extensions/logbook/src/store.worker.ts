@@ -15,7 +15,7 @@ import {
   runSqliteImmediateTransactionSync,
   type SqliteWorkerBackend,
 } from "openclaw/plugin-sdk/sqlite-runtime";
-import { pickKeyframeId } from "./analyze.js";
+import { MAX_FRAMES_PER_CALL, pickKeyframeId } from "./analyze.js";
 import type {
   LogbookBatchInput,
   LogbookDay,
@@ -112,6 +112,57 @@ class LogbookDatabaseStore {
         .select(["id", "day", "start_ms", "end_ms", "status", "error", "frame_count", "model"]);
       this.cardsQuery = this.query.selectFrom("cards");
       this.statements = {
+        sampledBatchFrames: prepareSqliteQuerySync<number, Parameters<typeof toFrame>[0]>(
+          db,
+          (p) => {
+            const sampledIds = this.query
+              .with("ordered_frames", (db) =>
+                db
+                  .selectFrom("frames")
+                  .select("id")
+                  .select((eb) => [
+                    eb.fn
+                      .agg<number>("row_number", [])
+                      .over((ob) => ob.orderBy("captured_at_ms", "asc").orderBy("id", "asc"))
+                      .as("ordinal"),
+                    eb.fn.countAll<number>().over().as("total"),
+                  ])
+                  .where(
+                    "batch_id",
+                    "=",
+                    p((batchId) => batchId),
+                  ),
+              )
+              .selectFrom("ordered_frames")
+              .select("id")
+              .where((eb) => {
+                const step = eb(
+                  eb.cast<number>(eb("total", "-", eb.val(1)), "real"),
+                  "/",
+                  eb.val(MAX_FRAMES_PER_CALL - 1),
+                );
+                return eb.or([
+                  eb("total", "<=", MAX_FRAMES_PER_CALL),
+                  ...Array.from({ length: MAX_FRAMES_PER_CALL }, (_, index) =>
+                    // Positive ordinals use Math.round(index * ((total - 1) / 15)) + 1.
+                    eb(
+                      "ordinal",
+                      "=",
+                      eb(
+                        eb.cast<number>(
+                          eb(eb(eb.val(index), "*", step), "+", eb.val(0.5)),
+                          "integer",
+                        ),
+                        "+",
+                        eb.val(1),
+                      ),
+                    ),
+                  ),
+                ]);
+              });
+            return this.framesQuery.where("id", "in", sampledIds);
+          },
+        ),
         insertFrame: prepareSqliteQuerySync<LogbookFrameInput>(db, (p) =>
           this.query.insertInto("frames").values({
             captured_at_ms: p((row) => row.capturedAtMs),
@@ -392,6 +443,11 @@ class LogbookDatabaseStore {
     ).rows.map(toFrame);
   }
 
+  sampledBatchFrames(batchId: number): LogbookFrame[] {
+    // The ordinal scan and sampled payload read share one SQLite statement.
+    return this.statements.sampledBatchFrames(batchId).rows.map(toFrame);
+  }
+
   // Replace batch evidence atomically so manual retries cannot duplicate it.
   replaceObservations(batchId: number, day: string, segments: LogbookObservationInput[]): void {
     runSqliteImmediateTransactionSync(
@@ -653,6 +709,8 @@ export function createSqliteWorkerBackend(
           return store.nextPendingBatch();
         case "batchFrames":
           return store.batchFrames(command.input.batchId);
+        case "sampledBatchFrames":
+          return store.sampledBatchFrames(command.input.batchId);
         case "replaceObservations":
           return store.replaceObservations(
             command.input.batchId,
