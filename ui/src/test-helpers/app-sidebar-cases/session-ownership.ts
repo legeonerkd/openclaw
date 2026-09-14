@@ -40,12 +40,8 @@ export async function selectSessionMenuValue(sidebar: SidebarLifecycleState, val
   await sidebar.updateComplete;
 }
 
-async function selectSort(sidebar: SidebarLifecycleState, mode: string) {
-  await selectSessionMenuValue(sidebar, `sort:${mode}`);
-}
-
 async function expectSort(sidebar: SidebarLifecycleState, mode: string, keys: string[]) {
-  await selectSort(sidebar, mode);
+  await selectSessionMenuValue(sidebar, `sort:${mode}`);
   expect(visibleSessionKeys(sidebar)).toEqual(keys);
 }
 
