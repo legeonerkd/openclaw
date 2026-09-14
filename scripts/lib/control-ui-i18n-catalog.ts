@@ -8,6 +8,7 @@ import { registerAgentsHomeEnglish } from "../../ui/src/i18n/locales/en-agents-h
 import { registerAppsEnglish } from "../../ui/src/i18n/locales/en-apps.ts";
 import { registerBoardWebsiteEnglish } from "../../ui/src/i18n/locales/en-board-website.ts";
 import { registerBrowserEnglish } from "../../ui/src/i18n/locales/en-browser.ts";
+import { registerCronEnglish } from "../../ui/src/i18n/locales/en-cron.ts";
 import { registerDebugEnglish } from "../../ui/src/i18n/locales/en-debug.ts";
 import { registerDesktopEnglish } from "../../ui/src/i18n/locales/en-desktop.ts";
 import { registerDevicesEnglish } from "../../ui/src/i18n/locales/en-devices.ts";
@@ -45,6 +46,7 @@ const sourceFiles = [
   "en-apps.ts",
   "en-board-website.ts",
   "en-browser.ts",
+  "en-cron.ts",
   "en-debug.ts",
   "en-desktop.ts",
   "en-devices.ts",
@@ -86,6 +88,7 @@ export function loadControlUiSourceCatalog(): TranslationMap {
     registerAgentsHomeEnglish.catalog,
     registerAppsEnglish.catalog,
     registerBrowserEnglish.catalog,
+    registerCronEnglish.catalog,
     registerDevicesEnglish.catalog,
     registerLoginEnglish.catalog,
     registerMeetingsEnglish.catalog,

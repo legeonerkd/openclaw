@@ -11,6 +11,7 @@ import { showConfirmDialog } from "../../components/confirm-dialog.ts";
 import { renderSettingsPageHeader } from "../../components/settings-ui.ts";
 import { renderSettingsWorkspace } from "../../components/settings-workspace.ts";
 import { t } from "../../i18n/index.ts";
+import { registerCronEnglish } from "../../i18n/locales/en-cron.ts";
 import { watchAgentScope } from "../../lib/agents/index.ts";
 import {
   addCronJob,
@@ -47,6 +48,8 @@ import { SubscriptionsController } from "../../lit/subscriptions-controller.ts";
 import { buildCronSuggestions, THINKING_SUGGESTIONS } from "./form-suggestions.ts";
 import { resolveCronRouteData } from "./route-model.ts";
 import { renderCron, type CronDetailTab, type CronListTab } from "./view.ts";
+
+registerCronEnglish();
 
 class CronPage extends OpenClawLightDomElement {
   @consume({ context: applicationContext, subscribe: true })
