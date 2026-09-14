@@ -937,7 +937,6 @@ describe("chat metadata ownership", () => {
           authProfileOverrideSource: "user",
         },
       );
-      const config: OpenClawConfig = {};
       const readChatMetadata = vi.fn<GatewayRequestContext["readChatMetadata"]>(async () => ({
         commands: [],
         models: [],
@@ -945,10 +944,7 @@ describe("chat metadata ownership", () => {
       }));
       const respond = vi.fn();
       const handler = expectDefined(chatHistoryHandlers["chat.metadata"], "metadata handler");
-      const context = createDirectChatContext({
-        getRuntimeConfig: () => config,
-        readChatMetadata,
-      });
+      const context = createDirectChatContext({ readChatMetadata });
       for (const params of [{ agentId: "   ", sessionKey }, { agentId: "main" }]) {
         await handler({
           params,
